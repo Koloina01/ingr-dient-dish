@@ -10,21 +10,29 @@ public class DataRetriever {
         try {
             PreparedStatement preparedStatement = connection.prepareStatement(
                     """
-                            select dish.id as dish_id, dish.name as dish_name, dish_type, dish.price as dish_price
-                            from dish
-                            where dish.id = ?;
-                            """);
+                            select i.id, i.name, i.price, i.category,
+                            di.quantity_required, di.unit
+                            FROM DishIngredient di
+                            JOIN Ingredient i ON di.id_ingredient = i.id
+                            WHERE di.id_dish = ?
+                                                """);
             preparedStatement.setInt(1, id);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                Dish dish = new Dish();
-                dish.setId(resultSet.getInt("dish_id"));
-                dish.setName(resultSet.getString("dish_name"));
-                dish.setDishType(DishTypeEnum.valueOf(resultSet.getString("dish_type")));
-                dish.setPrice(resultSet.getObject("dish_price") == null
-                        ? null : resultSet.getDouble("dish_price"));
-                dish.setIngredients(findIngredientByDishId(id));
-                return dish;
+                do {
+                    Ingredient ingredients = new Ingredient();
+                    ingredients.setId(resultSet.getInt("id"));
+                    ingredients.setName(resultSet.getString("name"));
+                    ingredients.setCategory(CategoryEnum.valueOf(resultSet.getString("category")));
+                    ingredients.setPrice(resultSet.getDouble("price"));
+
+                    DishIngredient dishIngredient = new DishIngredient();
+                    dishIngredient.setIngredient(ingredients);
+                    dishIngredient.setQuantityRequired(resultSet.getDouble("quantity_required"));
+                    dishIngredient.setUnit(UnitType.valueOf(resultSet.getString("unit")));
+                } while (
+                    resultSet.next()
+                );
             }
             dbConnection.closeConnection(connection);
             throw new RuntimeException("Dish not found " + id);
@@ -102,7 +110,7 @@ public class DataRetriever {
                     ps.setDouble(4, ingredient.getPrice());
                     if (ingredient.getQuantity() != null) {
                         ps.setDouble(5, ingredient.getQuantity());
-                    }else {
+                    } else {
                         ps.setNull(5, Types.DOUBLE);
                     }
 
@@ -125,7 +133,6 @@ public class DataRetriever {
             dbConnection.closeConnection(conn);
         }
     }
-
 
     private void detachIngredients(Connection conn, Integer dishId, List<Ingredient> ingredients)
             throws SQLException {
@@ -212,7 +219,6 @@ public class DataRetriever {
         }
     }
 
-
     private String getSerialSequenceName(Connection conn, String tableName, String columnName)
             throws SQLException {
 
@@ -237,8 +243,7 @@ public class DataRetriever {
         String sequenceName = getSerialSequenceName(conn, tableName, columnName);
         if (sequenceName == null) {
             throw new IllegalArgumentException(
-                    "Any sequence found for " + tableName + "." + columnName
-            );
+                    "Any sequence found for " + tableName + "." + columnName);
         }
         updateSequenceNextValue(conn, tableName, columnName, sequenceName);
 
@@ -253,11 +258,11 @@ public class DataRetriever {
         }
     }
 
-    private void updateSequenceNextValue(Connection conn, String tableName, String columnName, String sequenceName) throws SQLException {
+    private void updateSequenceNextValue(Connection conn, String tableName, String columnName, String sequenceName)
+            throws SQLException {
         String setValSql = String.format(
                 "SELECT setval('%s', (SELECT COALESCE(MAX(%s), 0) FROM %s))",
-                sequenceName, columnName, tableName
-        );
+                sequenceName, columnName, tableName);
 
         try (PreparedStatement ps = conn.prepareStatement(setValSql)) {
             ps.executeQuery();
