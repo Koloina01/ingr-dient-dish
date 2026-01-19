@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class DataRetriever {
-    Dish findDishById(Integer id) {
+    Dish findDishIngredientById(Integer id) {
         DBConnection dbConnection = new DBConnection();
         Connection connection = dbConnection.getConnection();
         try {
@@ -89,7 +89,7 @@ public class DataRetriever {
             }
 
             conn.commit();
-            return findDishById(dishId);
+            return findDishIngredientById(dishId);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
