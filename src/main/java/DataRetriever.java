@@ -71,11 +71,22 @@ public class DataRetriever {
                     rs.next();
                     dishId = rs.getInt(1);
                 }
-            }
 
-            List<Ingredient> newIngredients = toSave.getIngredients();
-            detachIngredients(conn, dishId, newIngredients);
-            attachIngredients(conn, dishId, newIngredients);
+                String insertDishIngredient = """
+                        insert into DishIngredient (id_dish, id_ingredient, quantity_required,unit)
+                        values (?,?,?,?::unit_type)
+                        """;
+
+                try (PreparedStatement psDishIngredient = conn.prepareStatement(insertDishIngredient)) {
+                    for (DishIngredient dishIngredient : toSave.getDishIngredients()) {
+                        psDishIngredient.setInt(1, dishId);
+                        psDishIngredient.setInt(2, dishIngredient.getIngredient().getId());
+                        psDishIngredient.setDouble(3, dishIngredient.getQuantityRequired());
+                        psDishIngredient.setString(4, dishIngredient.getUnit().name());
+                        psDishIngredient.executeUpdate();
+                    }
+                }
+            }
 
             conn.commit();
             return findDishById(dishId);
