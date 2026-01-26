@@ -44,9 +44,10 @@ public class DataRetriever {
                        ingredient.name,
                        ingredient.price,
                        ingredient.category,
-                       ingredient.required_quantity
-                FROM ingredient
-                WHERE id_dish = ?;
+                        DishIngredient.quantity_required 
+                       from DishIngredient join Dish on Dish.id = id_dish
+                          join Ingredient on Ingredient.id = id_ingredient
+                          Where id_dish = ?;
                 """
         );
         preparedStatement.setInt(1, idDish);
@@ -54,17 +55,18 @@ public class DataRetriever {
 
         while (resultSet.next()) {
             Ingredient ingredient = new Ingredient();
+            DishIngredient dishIngredient = new DishIngredient();
             ingredient.setId(resultSet.getInt("id_ingredient"));
             ingredient.setName(resultSet.getString("name"));
             ingredient.setPrice(resultSet.getDouble("price"));
             ingredient.setCategory(CategoryEnum.valueOf(resultSet.getString("category")));
 
-            DishIngredient dishIngredient = new DishIngredient();
+
+
+            
             dishIngredient.setIngredient(ingredient);
             dishIngredient.setQuantityRequired(
-                    resultSet.getObject("required_quantity") == null
-                            ? null
-                            : resultSet.getDouble("required_quantity")
+                    resultSet.getDouble("required_quantity") 
             );
 
             dishIngredients.add(dishIngredient);
@@ -85,7 +87,8 @@ public class DataRetriever {
                     VALUES (?, ?, ?, ?::dish_type)
                     ON CONFLICT (id) DO UPDATE
                     SET name = EXCLUDED.name,
-                        dish_type = EXCLUDED.dish_type
+                        dish_type = EXCLUDED.dish_type,
+                        selling_price = EXCLUDED.selling_price
                     RETURNING id
                 """;
 
@@ -98,8 +101,8 @@ public class DataRetriever {
                 } else {
                     ps.setInt(1, getNextSerialValue(conn, "dish", "id"));
                 }
-                if (toSave.getPrice() != null) {
-                    ps.setDouble(2, toSave.getPrice());
+                if (toSave.getSellingPrice() != null) {
+                    ps.setDouble(2, toSave.getSellingPrice());
                 } else {
                     ps.setNull(2, Types.DOUBLE);
                 }
@@ -111,12 +114,79 @@ public class DataRetriever {
                 }
             }
 
-            List<Ingredient> newIngredients = toSave.getIngredients();
-            detachIngredients(conn, dishId, newIngredients);
-            attachIngredients(conn, dishId, newIngredients);
+            List<DishIngredient> newIngredients = toSave.getDishIngredients();
+            detachDisIngredient(conn, dishId, newIngredients);
+            savedIngredients(conn, dishId, newIngredients);
+            attachDishIngredient(conn, dishId, newIngredients);
 
             conn.commit();
-            return findDishById(dishId);
+            return toSave;
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void savedIngredients( Connection conn, Integer dishId, List<DishIngredient> newIngredients) {
+        if (newIngredients == null || newIngredients.isEmpty()) {
+            return;
+        }
+        String insertSql = """
+                    INSERT INTO Ingredient (id, name, price, category)
+                    VALUES (?, ?, ?, ?::ingredient_category)
+                    ON CONFLICT (id) DO UPDATE
+                    SET name = EXCLUDED.name,
+                        price = EXCLUDED.price,
+                        category = EXCLUDED.category
+                """;
+
+        try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+            for (DishIngredient dishIngredient : newIngredients) {
+                ps.setInt(1, dishIngredient.getIngredient().getId());
+                ps.setString(2, dishIngredient.getIngredient().getName());
+                ps.setDouble(3, dishIngredient.getIngredient().getPrice());
+                ps.setString(4, dishIngredient.getIngredient().getCategory().name());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void attachDishIngredient(Connection conn, Integer dishId, List<DishIngredient> newIngredients) {
+        if (newIngredients == null || newIngredients.isEmpty()) {
+            return;
+        }
+        String insertDishIngredientSql = """
+                    INSERT INTO DishIngredient (id, id_dish, id_ingredient, quantity_required, unit)
+                    VALUES (?, ?, ?, ?, ?::unit_type)
+                """;
+        try (PreparedStatement ps = conn.prepareStatement(insertDishIngredientSql)) {
+            for (DishIngredient dishIngredient : newIngredients) {
+                ps.setInt(1, dishIngredient.getId());
+                ps.setInt(2, dishIngredient.getDish().getId());
+                ps.setInt(3, dishIngredient.getIngredient().getId());
+                ps.setDouble(4, dishIngredient.getQuantityRequired());
+                ps.setString(5, dishIngredient.getUnit().name());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void detachDisIngredient(Connection conn, Integer dishId, List<DishIngredient> newIngredients) {
+        if (newIngredients == null || newIngredients.isEmpty()) {
+            return;
+        }
+        String deleteDishSql = """
+                    DELETE FROM DishIngredient WHERE id_dish = ?
+                """;;
+
+        try (PreparedStatement ps = conn.prepareStatement(deleteDishSql)) {
+            ps.setInt(1, dishId);
+            ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
