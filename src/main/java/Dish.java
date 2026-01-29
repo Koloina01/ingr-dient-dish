@@ -16,18 +16,6 @@ public class Dish {
         this.price = price;
     }
 
-    public Double getDishCost() {
-        double totalPrice = 0;
-
-        for (DishIngredient di : dishIngredients) {
-            if (di.getQuantityRequired() == null) {
-                throw new RuntimeException("Quantity required is null");
-            }
-            totalPrice += di.getIngredient().getPrice() * di.getQuantityRequired();
-        }
-
-        return totalPrice;
-    }
     public Dish() {
     }
 
@@ -70,13 +58,23 @@ public class Dish {
         this.dishIngredients = dishIngredients;
     }
 
+    public Double getDishCost() {
+        double totalPrice = 0;
+        for (DishIngredient dishIngredient : dishIngredients) {
+            Double quantity = dishIngredient.getQuantityRequired();
+            if (quantity == null) {
+                throw new RuntimeException("Some ingredients have undefined quantity");
+            }
+            totalPrice += dishIngredient.getIngredient().getPrice() * quantity;
+        }
+        return totalPrice;
+    }
+
     @Override
     public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass())
-            return false;
+        if (o == null || getClass() != o.getClass()) return false;
         Dish dish = (Dish) o;
-        return Objects.equals(id, dish.id) && Objects.equals(name, dish.name) && dishType == dish.dishType
-                && Objects.equals(dishIngredients, dish.dishIngredients);
+        return Objects.equals(id, dish.id) && Objects.equals(name, dish.name) && dishType == dish.dishType && Objects.equals(dishIngredients, dish.dishIngredients);
     }
 
     @Override
@@ -91,6 +89,8 @@ public class Dish {
                 ", price=" + price +
                 ", name='" + name + '\'' +
                 ", dishType=" + dishType +
+                ", cost=" + getDishCost() +
+                ", grossMargin=" + getGrossMargin() +
                 ", dishIngredients=" + dishIngredients +
                 '}';
     }
