@@ -193,7 +193,7 @@ public class DataRetriever {
         try {
             conn.setAutoCommit(false);
             String insertSql = """
-                        INSERT INTO ingredient (id, name, price, category)
+                        INSERT INTO ingredient (id, name, price, category )
                         VALUES (?, ?, ?, ?::ingredient_category, ?)
                         RETURNING id
                     """;
@@ -514,8 +514,12 @@ public class DataRetriever {
         DBConnection dbConnection = new DBConnection();
         try (Connection connection = dbConnection.getConnection()) {
             PreparedStatement preparedStatement = connection.prepareStatement("""
-                    select id, reference, creation_datetime from "order" where reference like ?""");
+                SELECT id, reference, creation_datetime, type, status
+                FROM "order"
+                WHERE reference LIKE ?
+            """);
             preparedStatement.setString(1, reference);
+
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 Order order = new Order();
@@ -523,6 +527,8 @@ public class DataRetriever {
                 order.setId(idOrder);
                 order.setReference(resultSet.getString("reference"));
                 order.setCreationDatetime(resultSet.getTimestamp("creation_datetime").toInstant());
+                order.setType(OrderTypeEnum.valueOf(resultSet.getString("type")));
+                order.setStatus(OrderStatusEnum.valueOf(resultSet.getString("status")));
                 order.setDishOrderList(findDishOrderByIdOrder(idOrder));
                 return order;
             }
@@ -569,7 +575,6 @@ public class DataRetriever {
                 Ingredient ingredient = dishIngredient.getIngredient();
 
                 double requiredQuantity = dishIngredient.getQuantityRequired() * dishQuantity;
-
                 double availableQuantity = ingredient.getStockValueAt(now).getQuantity();
 
                 if (availableQuantity < requiredQuantity) {
@@ -585,79 +590,126 @@ public class DataRetriever {
 
         checkStockAvailability(orderToSave);
 
-        String insertOrderSql = """
-                    INSERT INTO "order" (id, reference, creation_datetime)
-                    VALUES (?, ?, ?)
-                    RETURNING id;
-                """;
-
-        String insertDishOrderSql = """
-                    INSERT INTO dish_order (id, id_order, id_dish, quantity)
-                    VALUES (?, ?, ?, ?);
-                """;
-
-        String insertStockMovementSql = """
-                    INSERT INTO stockMovement
-                    (id, id_ingredient, quantity, type, unit, creation_datetime)
-                    VALUES (?, ?, ?, ?::movement_type, ?::unit, ?)
-                    ON CONFLICT (id) DO NOTHING;
-                """;
-
         try (Connection conn = dbConnection.getConnection()) {
             conn.setAutoCommit(false);
 
-            Integer orderId;
-            try (PreparedStatement ps = conn.prepareStatement(insertOrderSql)) {
-                ps.setInt(1, getNextSerialValue(conn, "order", "id"));
-                ps.setString(2, orderToSave.getReference());
-                ps.setTimestamp(3, Timestamp.from(orderToSave.getCreationDatetime()));
+            Integer orderId = saveOrUpdateOrder(conn, orderToSave);
 
-                ResultSet rs = ps.executeQuery();
-                rs.next();
-                orderId = rs.getInt(1);
-            }
+            detachDishOrders(conn, orderId); 
+            attachSaveDishOrders(conn, orderId, orderToSave.getDishOrderList());
 
-            try (PreparedStatement ps = conn.prepareStatement(insertDishOrderSql)) {
-                for (DishOrder dishOrder : orderToSave.getDishOrderList()) {
-                    ps.setInt(1, getNextSerialValue(conn, "dish_order", "id"));
-                    ps.setInt(2, orderId);
-                    ps.setInt(3, dishOrder.getDish().getId());
-                    ps.setInt(4, dishOrder.getQuantity());
-                    ps.addBatch();
-                }
-                ps.executeBatch();
-            }
-
-            try (PreparedStatement ps = conn.prepareStatement(insertStockMovementSql)) {
-                Instant now = Instant.now();
-
-                for (DishOrder dishOrder : orderToSave.getDishOrderList()) {
-                    Dish dish = dishOrder.getDish();
-                    int dishQuantity = dishOrder.getQuantity();
-
-                    for (DishIngredient dishIngredient : dish.getDishIngredients()) {
-                        Ingredient ingredient = dishIngredient.getIngredient();
-
-                        double usedQuantity = dishIngredient.getQuantityRequired() * dishQuantity;
-
-                        ps.setInt(1, getNextSerialValue(conn, "stockMovement", "id"));
-                        ps.setInt(2, ingredient.getId());
-                        ps.setDouble(3, usedQuantity);
-                        ps.setString(4, MovementTypeEnum.OUT.name());
-                        ps.setString(5, ingredient.getStockValueAt(now).getUnit().name());
-                        ps.setTimestamp(6, Timestamp.from(now));
-                        ps.addBatch();
-                    }
-                }
-                ps.executeBatch();
-            }
+            saveStockMovements(conn, orderToSave.getDishOrderList());
 
             conn.commit();
-
             return findOrderByReference(orderToSave.getReference());
 
         } catch (SQLException e) {
             throw new RuntimeException("Error while saving order", e);
+        }
+    }
+
+    private Integer saveOrUpdateOrder(Connection conn, Order order) throws SQLException {
+        Order existingOrder = null;
+        try {
+            existingOrder = findOrderByReference(order.getReference());
+        } catch (RuntimeException ignored) {
+        }
+
+        if (existingOrder == null) {
+            
+            String insertOrderSql = """
+                        INSERT INTO "order" (id, reference, creation_datetime, type, status)
+                        VALUES (?, ?, ?, ?::order_type_enum, ?::order_status_enum)
+                        RETURNING id;
+                    """;
+
+            try (PreparedStatement ps = conn.prepareStatement(insertOrderSql)) {
+                ps.setInt(1, getNextSerialValue(conn, "order", "id"));
+                ps.setString(2, order.getReference());
+                ps.setTimestamp(3, Timestamp.from(order.getCreationDatetime()));
+                ps.setString(4, order.getType().name());
+                ps.setString(5, order.getStatus().name());
+
+                ResultSet rs = ps.executeQuery();
+                rs.next();
+                return rs.getInt(1);
+            }
+        } else {
+            String updateOrderSql = """
+                        UPDATE "order"
+                        SET type = ?::order_type_enum,
+                            status = ?::order_status_enum
+                        WHERE reference = ?
+                        RETURNING id;
+                    """;
+
+            try (PreparedStatement ps = conn.prepareStatement(updateOrderSql)) {
+                ps.setString(1, order.getType().name());
+                ps.setString(2, order.getStatus().name());
+                ps.setString(3, order.getReference());
+
+                ResultSet rs = ps.executeQuery();
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
+    }
+
+    private void detachDishOrders(Connection conn, Integer orderId) throws SQLException {
+        String deleteSql = "DELETE FROM dish_order WHERE id_order = ?";
+        try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
+            ps.setInt(1, orderId);
+            ps.executeUpdate();
+        }
+    }
+
+    private void attachSaveDishOrders(Connection conn, Integer orderId, List<DishOrder> dishOrderList) throws SQLException {
+        String insertDishOrderSql = """
+            INSERT INTO dish_order (id, id_order, id_dish, quantity)
+            VALUES (?, ?, ?, ?);
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(insertDishOrderSql)) {
+            for (DishOrder dishOrder : dishOrderList) {
+                ps.setInt(1, getNextSerialValue(conn, "dish_order", "id"));
+                ps.setInt(2, orderId);
+                ps.setInt(3, dishOrder.getDish().getId());
+                ps.setInt(4, dishOrder.getQuantity());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private void saveStockMovements(Connection conn, List<DishOrder> dishOrderList) throws SQLException {
+        String insertStockMovementSql = """
+            INSERT INTO stockMovement
+            (id, id_ingredient, quantity, type, unit, creation_datetime)
+            VALUES (?, ?, ?, ?::movement_type, ?::unit, ?)
+            ON CONFLICT (id) DO NOTHING;
+        """;
+
+        Instant now = Instant.now();
+
+        try (PreparedStatement ps = conn.prepareStatement(insertStockMovementSql)) {
+            for (DishOrder dishOrder : dishOrderList) {
+                Dish dish = dishOrder.getDish();
+                int dishQuantity = dishOrder.getQuantity();
+
+                for (DishIngredient dishIngredient : dish.getDishIngredients()) {
+                    Ingredient ingredient = dishIngredient.getIngredient();
+                    double usedQuantity = dishIngredient.getQuantityRequired() * dishQuantity;
+
+                    ps.setInt(1, getNextSerialValue(conn, "stockMovement", "id"));
+                    ps.setInt(2, ingredient.getId());
+                    ps.setDouble(3, usedQuantity);
+                    ps.setString(4, MovementTypeEnum.OUT.name());
+                    ps.setString(5, ingredient.getStockValueAt(now).getUnit().name());
+                    ps.setTimestamp(6, Timestamp.from(now));
+                    ps.addBatch();
+                }
+            }
+            ps.executeBatch();
         }
     }
 }
