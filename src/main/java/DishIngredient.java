@@ -5,6 +5,16 @@ public class DishIngredient {
     private Double quantityRequired;
     private UnitType unit;
 
+    public DishIngredient() {
+    }
+    
+    public DishIngredient(Integer id, Dish dish, Ingredient ingredient, Double quantityRequired, UnitType unit) {
+        this.id = id;
+        this.dish = dish;
+        this.ingredient = ingredient;
+        this.quantityRequired = quantityRequired;
+        this.unit = unit;
+    }
 
 
     public Integer getId() {
@@ -36,5 +46,16 @@ public class DishIngredient {
     }
     public void setUnit(UnitType unit) {
         this.unit = unit;
+    }
+
+    @Override
+    public String toString() {
+        return "DishIngredient{" +
+                "id=" + id +
+                ", dish=" + (dish != null ? dish.getName() : null) +
+                ", ingredient=" + (ingredient != null ? ingredient.getName() : null) +
+                ", quantityRequired=" + quantityRequired +
+                ", unit=" + unit +
+                '}';
     }
 }
