@@ -514,10 +514,10 @@ public class DataRetriever {
         DBConnection dbConnection = new DBConnection();
         try (Connection connection = dbConnection.getConnection()) {
             PreparedStatement preparedStatement = connection.prepareStatement("""
-                SELECT id, reference, creation_datetime, type, status
-                FROM "order"
-                WHERE reference LIKE ?
-            """);
+                        SELECT id, reference, creation_datetime, type, status
+                        FROM "order"
+                        WHERE reference LIKE ?
+                    """);
             preparedStatement.setString(1, reference);
 
             ResultSet resultSet = preparedStatement.executeQuery();
@@ -595,7 +595,7 @@ public class DataRetriever {
 
             Integer orderId = saveOrUpdateOrder(conn, orderToSave);
 
-            detachDishOrders(conn, orderId); 
+            detachDishOrders(conn, orderId);
             attachSaveDishOrders(conn, orderId, orderToSave.getDishOrderList());
 
             saveStockMovements(conn, orderToSave.getDishOrderList());
@@ -615,8 +615,17 @@ public class DataRetriever {
         } catch (RuntimeException ignored) {
         }
 
+        try {
+            existingOrder = findOrderByReference(order.getReference());
+        } catch (RuntimeException ignored) {
+        }
+
+        if (existingOrder != null && existingOrder.getStatus() == OrderStatusEnum.DELIVERED) {
+            throw new RuntimeException("Cannot modify a delivered order");
+        }
+
         if (existingOrder == null) {
-            
+
             String insertOrderSql = """
                         INSERT INTO "order" (id, reference, creation_datetime, type, status)
                         VALUES (?, ?, ?, ?::order_type_enum, ?::order_status_enum)
@@ -663,11 +672,12 @@ public class DataRetriever {
         }
     }
 
-    private void attachSaveDishOrders(Connection conn, Integer orderId, List<DishOrder> dishOrderList) throws SQLException {
+    private void attachSaveDishOrders(Connection conn, Integer orderId, List<DishOrder> dishOrderList)
+            throws SQLException {
         String insertDishOrderSql = """
-            INSERT INTO dish_order (id, id_order, id_dish, quantity)
-            VALUES (?, ?, ?, ?);
-        """;
+                    INSERT INTO dish_order (id, id_order, id_dish, quantity)
+                    VALUES (?, ?, ?, ?);
+                """;
 
         try (PreparedStatement ps = conn.prepareStatement(insertDishOrderSql)) {
             for (DishOrder dishOrder : dishOrderList) {
@@ -683,11 +693,11 @@ public class DataRetriever {
 
     private void saveStockMovements(Connection conn, List<DishOrder> dishOrderList) throws SQLException {
         String insertStockMovementSql = """
-            INSERT INTO stockMovement
-            (id, id_ingredient, quantity, type, unit, creation_datetime)
-            VALUES (?, ?, ?, ?::movement_type, ?::unit, ?)
-            ON CONFLICT (id) DO NOTHING;
-        """;
+                    INSERT INTO stockMovement
+                    (id, id_ingredient, quantity, type, unit, creation_datetime)
+                    VALUES (?, ?, ?, ?::movement_type, ?::unit, ?)
+                    ON CONFLICT (id) DO NOTHING;
+                """;
 
         Instant now = Instant.now();
 
