@@ -35,3 +35,16 @@ update dish set selling_price = 12000.00 where id = 2;
 update dish set selling_price = null where id = 3;
 update dish set selling_price = 8000.00 where id = 4;
 update dish set selling_price = null where id = 5;
+
+insert into StockMovement (id_ingredient, quantity, type, unit, creation_datetime)
+values
+(1, 5.0, 'IN', 'KG', '2024-01-05 08:00'),
+(1, 0.2, 'OUT', 'KG', '2024-01-06 12:00'),
+(2, 4.0, 'IN', 'KG', '2024-01-05 08:00'),
+(2, 0.15, 'OUT', 'KG', '2024-01-06 12:00'),
+(3, 10.0, 'IN', 'KG', '2024-01-04 09:00'),
+(3, 1.0, 'OUT', 'KG', '2024-01-06 13:00'),
+(4, 3.0, 'IN', 'KG', '2024-01-05 10:00'),
+(4, 0.3, 'OUT', 'KG', '2024-01-06 14:00'),
+(5, 2.5, 'IN', 'KG', '2024-01-05 10:00'),
+(5, 0.2, 'OUT', 'KG', '2024-01-06 14:00');
